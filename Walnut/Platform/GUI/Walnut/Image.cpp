@@ -8,6 +8,9 @@
 #define STB_IMAGE_IMPLEMENTATION
 #include "stb_image.h"
 
+#include <cmath>
+#include <algorithm>
+
 namespace Walnut {
 
 	namespace Utils {
@@ -67,6 +70,9 @@ namespace Walnut {
 		m_Width = width;
 		m_Height = height;
 		
+		if (!data)
+			return;
+
 		AllocateMemory(m_Width * m_Height * Utils::BytesPerPixel(m_Format));
 		SetData(data);
 		stbi_image_free(data);
@@ -93,6 +99,8 @@ namespace Walnut {
 		
 		VkFormat vulkanFormat = Utils::WalnutFormatToVulkanFormat(m_Format);
 
+		m_MipLevels = static_cast<uint32_t>(std::floor(std::log2(std::max(m_Width, m_Height)))) + 1;
+
 		// Create the Image
 		{
 			VkImageCreateInfo info = {};
@@ -102,11 +110,11 @@ namespace Walnut {
 			info.extent.width = m_Width;
 			info.extent.height = m_Height;
 			info.extent.depth = 1;
-			info.mipLevels = 1;
+			info.mipLevels = m_MipLevels;
 			info.arrayLayers = 1;
 			info.samples = VK_SAMPLE_COUNT_1_BIT;
 			info.tiling = VK_IMAGE_TILING_OPTIMAL;
-			info.usage = VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT;
+			info.usage = VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_STORAGE_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT;
 			info.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
 			info.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
 			err = vkCreateImage(device, &info, nullptr, &m_Image);
@@ -131,7 +139,7 @@ namespace Walnut {
 			info.viewType = VK_IMAGE_VIEW_TYPE_2D;
 			info.format = vulkanFormat;
 			info.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-			info.subresourceRange.levelCount = 1;
+			info.subresourceRange.levelCount = m_MipLevels;
 			info.subresourceRange.layerCount = 1;
 			err = vkCreateImageView(device, &info, nullptr, &m_ImageView);
 			check_vk_result(err);
@@ -147,9 +155,15 @@ namespace Walnut {
 			info.addressModeU = VK_SAMPLER_ADDRESS_MODE_REPEAT;
 			info.addressModeV = VK_SAMPLER_ADDRESS_MODE_REPEAT;
 			info.addressModeW = VK_SAMPLER_ADDRESS_MODE_REPEAT;
-			info.minLod = -1000;
-			info.maxLod = 1000;
-			info.maxAnisotropy = 1.0f;
+			info.mipLodBias = 0.0f;
+			info.minLod = 0.0f;
+			info.maxLod = static_cast<float>(m_MipLevels);
+			
+			// Enable Anisotropic Filtering (improves textures at grazing angles)
+			// Note: This usually requires the 'samplerAnisotropy' device feature to be enabled.
+			info.maxAnisotropy = 16.0f; 
+			info.anisotropyEnable = VK_TRUE;
+			
 			VkResult err = vkCreateSampler(device, &info, nullptr, &m_Sampler);
 			check_vk_result(err);
 		}
@@ -235,40 +249,99 @@ namespace Walnut {
 		{
 			VkCommandBuffer command_buffer = Application::GetCommandBuffer(true);
 
-			VkImageMemoryBarrier copy_barrier = {};
-			copy_barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
-			copy_barrier.dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
-			copy_barrier.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-			copy_barrier.newLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
-			copy_barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-			copy_barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-			copy_barrier.image = m_Image;
-			copy_barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-			copy_barrier.subresourceRange.levelCount = 1;
-			copy_barrier.subresourceRange.layerCount = 1;
-			vkCmdPipelineBarrier(command_buffer, VK_PIPELINE_STAGE_HOST_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT, 0, 0, NULL, 0, NULL, 1, &copy_barrier);
+			VkImageMemoryBarrier barrier = {};
+			barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+			barrier.image = m_Image;
+			barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+			barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+			barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+			barrier.subresourceRange.baseArrayLayer = 0;
+			barrier.subresourceRange.layerCount = 1;
+			barrier.subresourceRange.levelCount = 1;
+
+			// Transition all levels to TRANSFER_DST_OPTIMAL
+			barrier.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+			barrier.newLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+			barrier.srcAccessMask = 0;
+			barrier.dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+			barrier.subresourceRange.levelCount = m_MipLevels;
+			vkCmdPipelineBarrier(command_buffer, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT, 0, 0, nullptr, 0, nullptr, 1, &barrier);
 
 			VkBufferImageCopy region = {};
 			region.imageSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
 			region.imageSubresource.layerCount = 1;
+			region.imageSubresource.mipLevel = 0; // Copy to level 0
 			region.imageExtent.width = m_Width;
 			region.imageExtent.height = m_Height;
 			region.imageExtent.depth = 1;
 			vkCmdCopyBufferToImage(command_buffer, m_StagingBuffer, m_Image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &region);
 
-			VkImageMemoryBarrier use_barrier = {};
-			use_barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
-			use_barrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
-			use_barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
-			use_barrier.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
-			use_barrier.newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-			use_barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-			use_barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-			use_barrier.image = m_Image;
-			use_barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-			use_barrier.subresourceRange.levelCount = 1;
-			use_barrier.subresourceRange.layerCount = 1;
-			vkCmdPipelineBarrier(command_buffer, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, 0, 0, NULL, 0, NULL, 1, &use_barrier);
+			// Generate mipmaps
+			int32_t mipWidth = m_Width;
+			int32_t mipHeight = m_Height;
+
+			for (uint32_t i = 1; i < m_MipLevels; i++)
+			{
+				barrier.subresourceRange.baseMipLevel = i - 1;
+				barrier.subresourceRange.levelCount = 1;
+				barrier.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+				barrier.newLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
+				barrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+				barrier.dstAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
+
+				vkCmdPipelineBarrier(command_buffer,
+					VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT, 0,
+					0, nullptr,
+					0, nullptr,
+					1, &barrier);
+
+				VkImageBlit blit = {};
+				blit.srcOffsets[0] = { 0, 0, 0 };
+				blit.srcOffsets[1] = { mipWidth, mipHeight, 1 };
+				blit.srcSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+				blit.srcSubresource.mipLevel = i - 1;
+				blit.srcSubresource.baseArrayLayer = 0;
+				blit.srcSubresource.layerCount = 1;
+				blit.dstOffsets[0] = { 0, 0, 0 };
+				blit.dstOffsets[1] = { mipWidth > 1 ? mipWidth / 2 : 1, mipHeight > 1 ? mipHeight / 2 : 1, 1 };
+				blit.dstSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+				blit.dstSubresource.mipLevel = i;
+				blit.dstSubresource.baseArrayLayer = 0;
+				blit.dstSubresource.layerCount = 1;
+
+				vkCmdBlitImage(command_buffer,
+					m_Image, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+					m_Image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+					1, &blit,
+					VK_FILTER_LINEAR);
+
+				barrier.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
+				barrier.newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+				barrier.srcAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
+				barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
+
+				vkCmdPipelineBarrier(command_buffer,
+					VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT | VK_PIPELINE_STAGE_RAY_TRACING_SHADER_BIT_KHR, 0,
+					0, nullptr,
+					0, nullptr,
+					1, &barrier);
+
+				if (mipWidth > 1) mipWidth /= 2;
+				if (mipHeight > 1) mipHeight /= 2;
+			}
+
+			// Transition last level to SHADER_READ_ONLY_OPTIMAL
+			barrier.subresourceRange.baseMipLevel = m_MipLevels - 1;
+			barrier.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+			barrier.newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+			barrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+			barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
+
+			vkCmdPipelineBarrier(command_buffer,
+				VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT | VK_PIPELINE_STAGE_RAY_TRACING_SHADER_BIT_KHR, 0,
+				0, nullptr,
+				0, nullptr,
+				1, &barrier);
 
 			Application::FlushCommandBuffer(command_buffer);
 		}

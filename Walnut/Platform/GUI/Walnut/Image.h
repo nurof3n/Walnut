@@ -23,6 +23,9 @@ namespace Walnut {
 		void SetData(const void* data);
 
 		VkDescriptorSet GetDescriptorSet() const { return m_DescriptorSet; }
+		VkImage GetVkImage() const { return m_Image; }
+		VkImageView GetVkImageView() const { return m_ImageView; }
+		VkSampler GetVkSampler() const { return m_Sampler; }
 
 		void Resize(uint32_t width, uint32_t height);
 
@@ -35,6 +38,7 @@ namespace Walnut {
 		void Release();
 	private:
 		uint32_t m_Width = 0, m_Height = 0;
+		uint32_t m_MipLevels = 1;
 
 		VkImage m_Image = nullptr;
 		VkImageView m_ImageView = nullptr;
