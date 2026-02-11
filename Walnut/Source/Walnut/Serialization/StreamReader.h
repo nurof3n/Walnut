@@ -109,23 +109,13 @@ namespace Walnut
 
 			for (uint32_t i = 0; i < size; i++)
 			{
-				if constexpr (std::is_trivial<T>())
+				if constexpr (std::is_same_v<T, std::string>)
+					ReadString(array[i]);
+				else if constexpr (std::is_trivial<T>())
 					ReadRaw<T>(array[i]);
 				else
 					ReadObject<T>(array[i]);
 			}
-		}
-
-		template<>
-		void ReadArray(std::vector<std::string>& array, uint32_t size)
-		{
-			if (size == 0)
-				ReadRaw<uint32_t>(size);
-
-			array.resize(size);
-
-			for (uint32_t i = 0; i < size; i++)
-				ReadString(array[i]);
 		}
 	};
 

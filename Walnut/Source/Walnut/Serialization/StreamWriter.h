@@ -104,21 +104,13 @@ namespace Walnut
 
 			for (const auto& element : array)
 			{
-				if constexpr (std::is_trivial<T>())
+				if constexpr (std::is_same_v<T, std::string>)
+					WriteString(element);
+				else if constexpr (std::is_trivial<T>())
 					WriteRaw<T>(element);
 				else
 					WriteObject<T>(element);
 			}
-		}
-
-		template<>
-		void WriteArray(const std::vector<std::string>& array, bool writeSize)
-		{
-			if (writeSize)
-				WriteRaw<uint32_t>((uint32_t)array.size());
-
-			for (const auto& element : array)
-				WriteString(element);
 		}
 	};
 } // namespace Walnut
