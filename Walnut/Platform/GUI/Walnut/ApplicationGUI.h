@@ -80,6 +80,9 @@ namespace Walnut {
 		static VkPhysicalDevice GetPhysicalDevice();
 		static VkDevice GetDevice();
 
+		static VkPhysicalDeviceRayTracingPipelinePropertiesKHR GetRayTracingPipelineProperties();
+		static VkPhysicalDeviceAccelerationStructurePropertiesKHR GetAccelerationStructureProperties();
+
 		static VkCommandBuffer GetCommandBuffer(bool begin);
 		static void FlushCommandBuffer(VkCommandBuffer commandBuffer);
 
