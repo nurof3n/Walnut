@@ -232,9 +232,10 @@ static void SetupVulkan(const char** extensions, uint32_t extensions_count)
 
     // Create Logical Device (with 1 queue)
     {
-        int                     device_extension_count = 5;
+        int                     device_extension_count = 7;
         const char*             device_extensions[]    = { "VK_KHR_swapchain", "VK_KHR_acceleration_structure",
-                           "VK_KHR_ray_tracing_pipeline", "VK_KHR_deferred_host_operations", "VK_KHR_buffer_device_address" };
+                           "VK_KHR_ray_tracing_pipeline", "VK_KHR_deferred_host_operations", "VK_KHR_buffer_device_address",
+                           "VK_KHR_get_memory_requirements2", "VK_KHR_dedicated_allocation" };
         const float             queue_priority[]       = { 1.0f };
         VkDeviceQueueCreateInfo queue_info[1]          = {};
         queue_info[0].sType                            = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO;
@@ -1136,6 +1137,16 @@ namespace Walnut
     VkDevice Application::GetDevice()
     {
         return g_Device;
+    }
+
+    VkQueue Application::GetGraphicsQueue()
+    {
+        return g_Queue;
+    }
+
+    uint32_t Application::GetGraphicsQueueFamily()
+    {
+        return g_QueueFamily;
     }
 
     VkPhysicalDeviceRayTracingPipelinePropertiesKHR Application::GetRayTracingPipelineProperties()

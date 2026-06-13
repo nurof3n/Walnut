@@ -79,6 +79,8 @@ namespace Walnut {
 		static VkInstance GetInstance();
 		static VkPhysicalDevice GetPhysicalDevice();
 		static VkDevice GetDevice();
+		static VkQueue GetGraphicsQueue();
+		static uint32_t GetGraphicsQueueFamily();
 
 		static VkPhysicalDeviceRayTracingPipelinePropertiesKHR GetRayTracingPipelineProperties();
 		static VkPhysicalDeviceAccelerationStructurePropertiesKHR GetAccelerationStructureProperties();

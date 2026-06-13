@@ -10,7 +10,10 @@ namespace Walnut {
 	{
 		None = 0,
 		RGBA,
-		RGBA32F
+		RGBA32F,
+		R32F,
+		RG16F,
+		R32UI
 	};
 
 	class Image
@@ -26,6 +29,7 @@ namespace Walnut {
 		VkImage GetVkImage() const { return m_Image; }
 		VkImageView GetVkImageView() const { return m_ImageView; }
 		VkSampler GetVkSampler() const { return m_Sampler; }
+		ImageFormat GetFormat() const { return m_Format; }
 
 		void Resize(uint32_t width, uint32_t height);
 
