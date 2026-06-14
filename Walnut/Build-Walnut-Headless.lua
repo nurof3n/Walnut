@@ -42,7 +42,7 @@ project "Walnut-Headless"
       defines { "WL_PLATFORM_LINUX" }
 
       filter "configurations:Debug"
-      defines { "WL_DEBUG" }
+      defines { "WL_DEBUG", "_DEBUG" }
       runtime "Debug"
       symbols "On"
 
