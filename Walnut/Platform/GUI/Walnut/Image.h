@@ -11,6 +11,7 @@ namespace Walnut {
 		None = 0,
 		RGBA,
 		RGBA32F,
+		RGBA16F,
 		R32F,
 		RG16F,
 		R32UI
